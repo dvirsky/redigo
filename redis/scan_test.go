@@ -19,6 +19,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -143,15 +144,39 @@ type s0 struct {
 	Bt bool
 }
 
+type unm struct {
+	X string
+	Y string
+}
+
+func (u *unm) UnmarshalRedisValue(v interface{}) error {
+	fmt.Println("Unmarshalling %v", v)
+	switch s := v.(type) {
+	case []byte:
+		arr := strings.Split(string(s), ",")
+		if len(arr) != 2 {
+			return fmt.Errorf("Invalid arr len %d", arr)
+		}
+		u.X = arr[0]
+		u.Y = arr[1]
+
+	default:
+		return fmt.Errorf("Invalid type for value: %s", reflect.TypeOf(v))
+	}
+	return nil
+
+}
+
 type s1 struct {
-	X  int    `redis:"-"`
-	I  int    `redis:"i"`
-	U  uint   `redis:"u"`
-	S  string `redis:"s"`
-	P  []byte `redis:"p"`
-	B  bool   `redis:"b"`
-	Bt bool
-	Bf bool
+	X      int    `redis:"-"`
+	I      int    `redis:"i"`
+	U      uint   `redis:"u"`
+	S      string `redis:"s"`
+	P      []byte `redis:"p"`
+	B      bool   `redis:"b"`
+	Bt     bool
+	Bf     bool
+	Unmrsh unm `redis:"unmrsh"`
 	s0
 }
 
@@ -161,8 +186,8 @@ var scanStructTests = []struct {
 	value interface{}
 }{
 	{"basic",
-		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "X", "123", "y", "456"},
-		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, s0: s0{X: 123, Y: 456}},
+		[]string{"i", "-1234", "u", "5678", "s", "hello", "p", "world", "b", "t", "Bt", "1", "Bf", "0", "unmrsh", "foo,bar", "X", "123", "y", "456"},
+		&s1{I: -1234, U: 5678, S: "hello", P: []byte("world"), B: true, Bt: true, Bf: false, Unmrsh: unm{X: "foo", Y: "bar"}, s0: s0{X: 123, Y: 456}},
 	},
 }
 

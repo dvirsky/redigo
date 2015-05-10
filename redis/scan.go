@@ -95,7 +95,39 @@ func convertAssignInt(d reflect.Value, s int64) (err error) {
 	return
 }
 
+// Unmarshaler is an interface should be implemented by types that want custom unmarshaling of values
+// stored inside redis (e.g. values stored as json blobs can be automatically parsed)
+//
+// The unmarshaler should implement this as a pointer method
+type Unmarshaler interface {
+	UnmarshalRedisValue(interface{}) error
+}
+
+// convert the value using an unmarshaler if possible. The boolean return value indicates that we actually
+// found an unmarshaler and tried converting, and the error is returned only if we found one and
+// there was an unmarshaling error.
+func convertUnmarshaler(d reflect.Value, s interface{}) (error, bool) {
+
+	// if d is a struct we need to work on its pointer
+	if d.Kind() == reflect.Struct {
+		d = d.Addr()
+	}
+	// check if d is an unmarshaller
+	if d.Kind() == reflect.Ptr && d.CanInterface() {
+		if u, ok := d.Interface().(Unmarshaler); ok {
+			return u.UnmarshalRedisValue(s), true
+		}
+	}
+
+	return nil, false
+}
+
 func convertAssignValue(d reflect.Value, s interface{}) (err error) {
+
+	if err, done := convertUnmarshaler(d, s); done {
+		return err
+	}
+
 	switch s := s.(type) {
 	case []byte:
 		err = convertAssignBytes(d, s)
@@ -366,6 +398,10 @@ func ScanStruct(src []interface{}, dest interface{}) error {
 		if fs == nil {
 			continue
 		}
+		if string(name) == "unmrsh" {
+			fmt.Println(string(name), s, d.FieldByIndex(fs.index))
+		}
+
 		if err := convertAssignValue(d.FieldByIndex(fs.index), s); err != nil {
 			return err
 		}
